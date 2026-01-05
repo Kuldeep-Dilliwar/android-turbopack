@@ -1,6 +1,5 @@
-# unoffical-android-turbopack
-This repo contains info about the installation of unofficial Next.js SWC binaries for Android ARM64 (only work with npm and termux).
-
+# How to run Next.js with turbopack in Termux?
+## Here is how to:
 ##
 ```
 yes | pkg update
@@ -25,5 +24,3 @@ mv next-swc.android-arm64.node ./node_modules/next/next-swc-fallback/@next/swc-a
 &&
 npm run dev
 ```
-
-### or you can download specific canary version from this url https://github.com/Kuldeep-Dilliwar/next.js/releases (this is my personal build, includes version v16.1.1-canary.11 and ahead).
