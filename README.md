@@ -28,6 +28,7 @@ mv ./node_modules/next/wasm/@next/swc-wasm-nodejs/wasm.js ./node_modules/next/wa
 ```
 6. Moving our bin to right fallbacked dir
 ```
+mkdir ./node_modules/next/next-swc-fallback/@next/swc-android-arm64/
 mv next-swc.android-arm64.node ./node_modules/next/next-swc-fallback/@next/swc-android-arm64/
 ```
 7. Enjoy
