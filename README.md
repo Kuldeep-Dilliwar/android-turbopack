@@ -3,15 +3,15 @@ This repo contains info about the installation of unofficial Next.js SWC binarie
 
 ##
 ```
-pkg update
+yes | pkg update
 &&
-yes | pkg install unzip wget nodejs
+yes | pkg install unzip wget nodejs vim
 &&
-yes | npx create-next-app@v16.1.1-canary.11 my-app --yes
+yes | npx create-next-app@v16.1.1-canary.12 my-app --yes
 &&
 cd my-app
 &&
-wget https://github.com/Kuldeep-Dilliwar/next.js/releases/download/v16.1.1-canary.11-android/next-swc-binaries-aarch64-linux-android.zip
+wget https://github.com/Kuldeep-Dilliwar/next.js/releases/download/v16.1.1-canary.12-android/next-swc-binaries-aarch64-linux-android.zip
 &&
 unzip next-swc-binaries-aarch64-linux-android
 &&
