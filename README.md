@@ -1,6 +1,5 @@
 # How to run Next.js with turbopack in Termux?
 ## Here is how to:
-##
 ```
 yes | pkg update
 &&
