@@ -1,7 +1,7 @@
-# android-turbopack
+# unoffical-android-turbopack
 This repo contains info about the installation of unofficial Next.js SWC binaries for Android ARM64 (only work with npm and termux).
 
-## Steps
+##
 ```
 pkg update && yes | pkg install unzip wget nodejs
 npx create-next-app@v16.1.1-canary.11 my-app --yes
