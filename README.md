@@ -3,9 +3,9 @@
 ```
 yes | pkg update && yes | pkg upgrade && clear && \
 yes | pkg install ca-certificates unzip wget nodejs vim && clear && \
-yes | npx create-next-app@v16.2.0-canary.24 my-app --yes && clear && \
+yes | npx create-next-app@v16.2.0-canary.29 my-app --yes && clear && \
 cd my-app && clear && \
-wget https://github.com/Kuldeep-Dilliwar/next.js/releases/download/v16.2.0-canary.24-android/next-swc-binaries-aarch64-linux-android.zip && clear && \
+wget https://github.com/Kuldeep-Dilliwar/next.js/releases/download/v16.2.0-canary.29-android/next-swc-binaries-aarch64-linux-android.zip && clear && \
 unzip next-swc-binaries-aarch64-linux-android.zip && clear && \
 rm next-swc-binaries-aarch64-linux-android.zip && clear && \
 mv ./node_modules/next/wasm/@next/swc-wasm-nodejs/wasm.js ./node_modules/next/wasm/@next/swc-wasm-nodejs/wasm1.js && clear && \
