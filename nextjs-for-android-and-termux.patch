@@ -1,0 +1,1278 @@
+From 8e2a732275fd1fcda6b89fb1becf529d1b328c88 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 10:10:50 +0000
+Subject: [PATCH 01/19] android build
+
+---
+ .github/workflows/build_and_deploy.yml        | 27 ++++++
+ Cargo.lock                                    | 11 +++
+ crates/napi/Cargo.toml                        |  2 +
+ crates/napi/src/lockfile.rs                   | 32 +++++-
+ packages/next-swc/package.json                |  3 +-
+ packages/next/package.json                    |  3 +-
+ packages/next/src/build/swc/index.ts          |  2 +-
+ .../crates/turbo-tasks-malloc/src/counter.rs  | 72 +++++++++++++-
+ .../crates/turbo-tasks-malloc/src/lib.rs      | 97 +++++++++++++++++++
+ 9 files changed, 243 insertions(+), 6 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index e3d27faf6aa68b..848156b7fcfd3c 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -297,6 +297,26 @@ jobs:
+               npm run build-native-release -- --target aarch64-unknown-linux-musl
+               llvm-strip -x native/next-swc.*.node
+ 
++          - host: ubuntu-latest
++            target: 'aarch64-linux-android'
++            build: |
++              # 1. Setup Environment Variables
++              export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
++              export CARGO_TARGET_AARCH64_LINUX_ANDROID_AR=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
++              
++              # 2. Set Rust Flags
++              export RUSTFLAGS="--cfg tokio_unstable -Zshare-generics=y -Csymbol-mangling-version=v0 -Clink-arg=--sysroot=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
++
++              # 3. Install CLI tools
++              npm i -g "@napi-rs/cli@${NAPI_CLI_VERSION}"
++              
++              # 4. Build
++              cd packages/next-swc
++              npm run build-native-release -- --target aarch64-linux-android
++              
++              # 5. Strip the binary
++              $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip native/next-swc.*.node
++
+     name: stable - ${{ matrix.settings.target }} - node@16
+     runs-on: ${{ matrix.settings.host }}
+     timeout-minutes: 45
+@@ -334,6 +354,13 @@ jobs:
+           npm i -g corepack@0.31
+           corepack enable
+ 
++      # [ADD THIS BLOCK] Install Android NDK only if the target is Android
++      - name: Setup Android NDK
++        if: ${{ matrix.settings.target == 'aarch64-linux-android' }}
++        uses: nttld/setup-ndk@v1
++        with:
++          ndk-version: r28c
++
+       # we always want to run this to set environment variables
+       - name: Install Rust
+         uses: ./.github/actions/setup-rust
+diff --git a/Cargo.lock b/Cargo.lock
+index 2f3df224c9561d..ff7adda7954c61 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2327,6 +2327,16 @@ dependencies = [
+  "syn 2.0.104",
+ ]
+ 
++[[package]]
++name = "fs2"
++version = "0.4.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
++dependencies = [
++ "libc",
++ "winapi",
++]
++
+ [[package]]
+ name = "fs_extra"
+ version = "1.3.0"
+@@ -4446,6 +4456,7 @@ dependencies = [
+  "dhat",
+  "either",
+  "flate2",
++ "fs2",
+  "futures-util",
+  "getrandom 0.2.15",
+  "iana-time-zone",
+diff --git a/crates/napi/Cargo.toml b/crates/napi/Cargo.toml
+index f754b9ab80b847..af17b612597b92 100644
+--- a/crates/napi/Cargo.toml
++++ b/crates/napi/Cargo.toml
+@@ -55,6 +55,8 @@ ignored = [
+ ]
+ 
+ [dependencies]
++[target.'cfg(target_os = "android")'.dependencies]
++fs2 = "0.4"
+ anyhow = { workspace = true }
+ bincode = { workspace = true }
+ console-subscriber = { workspace = true, optional = true }
+diff --git a/crates/napi/src/lockfile.rs b/crates/napi/src/lockfile.rs
+index 9b44097a8a3df1..0ce5affbaa6301 100644
+--- a/crates/napi/src/lockfile.rs
++++ b/crates/napi/src/lockfile.rs
+@@ -8,6 +8,10 @@ use anyhow::Context;
+ use napi::bindgen_prelude::External;
+ use napi_derive::napi;
+ 
++#[cfg(target_os = "android")]
++use fs2::FileExt;
++
++
+ /// A wrapper around [`File`] that is passed to JS, and is set to `None` when [`lockfile_unlock`] is
+ /// called.
+ ///
+@@ -59,7 +63,7 @@ pub fn lockfile_try_acquire_sync(path: String) -> napi::Result<Option<External<J
+         }
+     };
+ 
+-    #[cfg(not(windows))]
++    #[cfg(all(not(windows), not(target_os = "android")))]
+     return {
+         use std::fs::TryLockError;
+ 
+@@ -75,6 +79,32 @@ pub fn lockfile_try_acquire_sync(path: String) -> napi::Result<Option<External<J
+             Err(TryLockError::Error(err)) => Err(err.into()),
+         }
+     };
++
++    #[cfg(target_os = "android")]
++    return {
++        let file = open_options.open(&path)?;
++        println!("Trying to lock file at {:?}", path);
++
++        match file.try_lock_exclusive() {
++            Ok(_) => {
++                println!("Lock succeeded!");
++                Ok(Some(External::new(Mutex::new(ManuallyDrop::new(Some(
++                    LockfileInner {
++                        file,
++                        path: path.into(),
++                    },
++                ))))))
++            }
++            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
++                println!("Lock would block, lock held elsewhere.");
++                Ok(None)
++            }
++            Err(e) => {
++                println!("Actual lock error: {:?}", e);
++                Err(e.into())
++            }
++        }
++    };
+ }
+ 
+ #[napi(ts_return_type = "Promise<{ __napiType: \"Lockfile\" } | null>")]
+diff --git a/packages/next-swc/package.json b/packages/next-swc/package.json
+index 2918339e3d874f..e861687bcb3edc 100644
+--- a/packages/next-swc/package.json
++++ b/packages/next-swc/package.json
+@@ -31,7 +31,8 @@
+         "x86_64-unknown-linux-musl",
+         "aarch64-unknown-linux-musl",
+         "aarch64-pc-windows-msvc",
+-        "wasm32-wasip1-threads"
++        "wasm32-wasip1-threads",
++        "aarch64-linux-android"
+       ]
+     }
+   },
+diff --git a/packages/next/package.json b/packages/next/package.json
+index 9e5c865c53a50b..bbee60b3e40671 100644
+--- a/packages/next/package.json
++++ b/packages/next/package.json
+@@ -127,7 +127,8 @@
+     }
+   },
+   "optionalDependencies": {
+-    "sharp": "^0.34.4"
++    "sharp": "^0.34.4",
++    "@next/swc-android-arm64": "16.1.1-canary.11"
+   },
+   "devDependencies": {
+     "@babel/code-frame": "7.26.2",
+diff --git a/packages/next/src/build/swc/index.ts b/packages/next/src/build/swc/index.ts
+index 18b8ef1d252037..25a5bd7bef5f05 100644
+--- a/packages/next/src/build/swc/index.ts
++++ b/packages/next/src/build/swc/index.ts
+@@ -145,7 +145,7 @@ function checkVersionMismatch(pkgData: any) {
+ // we'll not include native bindings for these platform at all.
+ const knownDefaultWasmFallbackTriples = [
+   'x86_64-unknown-freebsd',
+-  'aarch64-linux-android',
++  //'aarch64-linux-android',
+   'arm-linux-androideabi',
+   'armv7-unknown-linux-gnueabihf',
+   'i686-pc-windows-msvc',
+diff --git a/turbopack/crates/turbo-tasks-malloc/src/counter.rs b/turbopack/crates/turbo-tasks-malloc/src/counter.rs
+index d5faff91bafa2c..7f31b318313c4d 100644
+--- a/turbopack/crates/turbo-tasks-malloc/src/counter.rs
++++ b/turbopack/crates/turbo-tasks-malloc/src/counter.rs
+@@ -6,6 +6,9 @@ use std::{
+ 
+ use crate::AllocationCounters;
+ 
++#[cfg(target_os = "android")]
++use crate::IS_THREAD_EXITING_FLAG;
++
+ /// Tracks the current total amount of memory allocated through all the [ThreadLocalCounter]
+ /// instances.  This is an overestimate as individual threads 'preallocate' a [TARGET_BUFFER] bytes
+ /// to reduce the number of global synchronizations.  This means at any given time this might
+@@ -29,6 +32,21 @@ struct ThreadLocalCounter {
+     allocation_counters: AllocationCounters,
+ }
+ 
++#[cfg(target_os = "android")]
++fn atomic_sub(atomic: &AtomicUsize, val: usize) {
++    let mut current = atomic.load(Ordering::Relaxed);
++    loop {
++        let new = current.saturating_sub(val);
++        match atomic.compare_exchange_weak(
++            current, new,
++            Ordering::Relaxed, Ordering::Relaxed,
++        ) {
++            Ok(_) => break,
++            Err(x) => current = x,
++        }
++    }
++}
++
+ impl ThreadLocalCounter {
+     const fn new() -> Self {
+         Self {
+@@ -55,7 +73,12 @@ impl ThreadLocalCounter {
+         if self.buffer > MAX_BUFFER {
+             let offset = self.buffer - TARGET_BUFFER;
+             self.buffer = TARGET_BUFFER;
++
++            #[cfg(not(target_os = "android"))]
+             ALLOCATED.fetch_sub(offset, Ordering::Relaxed);
++
++            #[cfg(target_os = "android")]
++            atomic_sub(&ALLOCATED, offset);
+         }
+     }
+ 
+@@ -82,7 +105,12 @@ impl ThreadLocalCounter {
+                 if self.buffer > MAX_BUFFER {
+                     let offset = self.buffer - TARGET_BUFFER;
+                     self.buffer = TARGET_BUFFER;
++                    
++                    #[cfg(not(target_os = "android"))]
+                     ALLOCATED.fetch_sub(offset, Ordering::Relaxed);
++
++                    #[cfg(target_os = "android")]
++                    atomic_sub(&ALLOCATED, offset);
+                 }
+             }
+         }
+@@ -90,15 +118,48 @@ impl ThreadLocalCounter {
+ 
+     fn unload(&mut self) {
+         if self.buffer > 0 {
++
++            #[cfg(not(target_os = "android"))]
+             ALLOCATED.fetch_sub(self.buffer, Ordering::Relaxed);
++
++            #[cfg(target_os = "android")]
++            atomic_sub(&ALLOCATED, self.buffer);
++
+             self.buffer = 0;
+         }
+         self.allocation_counters = AllocationCounters::default();
+     }
+ }
+ 
++#[cfg(target_os = "android")]
++struct CounterGuard(ThreadLocalCounter);
++
++#[cfg(target_os = "android")]
++impl Drop for CounterGuard {
++    fn drop(&mut self) {
++        unsafe {
++            *IS_THREAD_EXITING_FLAG.get() = true;
++        }
++    }
++}
++
++#[cfg(target_os = "android")]
++impl CounterGuard {
++    const fn new() -> Self {
++        Self(ThreadLocalCounter::new())
++    }
++}
++
++#[cfg(target_os = "android")]
++type InnerCounter = CounterGuard;
++
++#[cfg(not(target_os = "android"))]
++type InnerCounter = ThreadLocalCounter;
++
+ thread_local! {
+-  static LOCAL_COUNTER: UnsafeCell<ThreadLocalCounter> = const {UnsafeCell::new(ThreadLocalCounter::new())};
++    static LOCAL_COUNTER: UnsafeCell<InnerCounter> = const {
++        UnsafeCell::new(InnerCounter::new())
++    };
+ }
+ 
+ pub fn get() -> usize {
+@@ -118,7 +179,14 @@ fn with_local_counter<T>(f: impl FnOnce(&mut ThreadLocalCounter) -> T) -> T {
+         let ptr = local.get();
+         // SAFETY: This is a thread local.
+         let mut local = unsafe { NonNull::new_unchecked(ptr) };
+-        f(unsafe { local.as_mut() })
++
++        #[cfg(target_os = "android")]
++        let inner = unsafe { &mut local.as_mut().0 };
++
++        #[cfg(not(target_os = "android"))]
++        let inner = unsafe { local.as_mut() };
++
++        f(inner)
+     })
+ }
+ 
+diff --git a/turbopack/crates/turbo-tasks-malloc/src/lib.rs b/turbopack/crates/turbo-tasks-malloc/src/lib.rs
+index 4c13caec0aa6a7..b3473454e87da2 100644
+--- a/turbopack/crates/turbo-tasks-malloc/src/lib.rs
++++ b/turbopack/crates/turbo-tasks-malloc/src/lib.rs
+@@ -1,3 +1,5 @@
++#![feature(thread_local)]
++
+ mod counter;
+ 
+ use std::{
+@@ -6,8 +8,31 @@ use std::{
+     ops::{Add, AddAssign},
+ };
+ 
++#[cfg(target_os = "android")]
++use std::cell::UnsafeCell;
++
+ use self::counter::{add, flush, get, remove, update};
+ 
++#[cfg(target_os = "android")]
++#[thread_local]
++static mut IN_ALLOCATOR: bool = false;
++
++#[cfg(target_os = "android")]
++#[thread_local]
++pub(crate) static IS_THREAD_EXITING_FLAG: UnsafeCell<bool> = UnsafeCell::new(false);
++
++#[cfg(target_os = "android")]
++#[inline(always)]
++fn should_bypass() -> bool {
++    unsafe { IN_ALLOCATOR || *IS_THREAD_EXITING_FLAG.get() }
++}
++
++#[cfg(not(target_os = "android"))]
++#[inline(always)]
++fn should_bypass() -> bool {
++    false
++}
++
+ #[derive(Default, Clone, Debug)]
+ pub struct AllocationInfo {
+     pub allocations: usize,
+@@ -100,6 +125,11 @@ impl TurboMalloc {
+ 
+     pub fn thread_stop() {
+         flush();
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            *IS_THREAD_EXITING_FLAG.get() = true;
++        }
+     }
+ 
+     pub fn allocation_counters() -> AllocationCounters {
+@@ -142,30 +172,91 @@ unsafe fn base_alloc_size(ptr: *const u8, layout: Layout) -> usize {
+ 
+ unsafe impl GlobalAlloc for TurboMalloc {
+     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++
++        #[cfg(target_os = "android")]
++        if should_bypass() {
++            return unsafe { base_alloc().alloc(layout) };
++        }
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = true;
++        }
++
+         let ret = unsafe { base_alloc().alloc(layout) };
+         if !ret.is_null() {
+             let size = unsafe { base_alloc_size(ret, layout) };
+             add(size);
+         }
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = false;
++        }
++
+         ret
+     }
+ 
+     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
++
++        #[cfg(target_os = "android")]
++        if should_bypass() {
++            return unsafe { base_alloc().dealloc(ptr, layout) };
++        }
++
++        #[cfg(target_os = "android")]
++        unsafe{
++            IN_ALLOCATOR = true;
++        }
++
+         let size = unsafe { base_alloc_size(ptr, layout) };
+         unsafe { base_alloc().dealloc(ptr, layout) };
+         remove(size);
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = false;
++        }
+     }
+ 
+     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++
++        #[cfg(target_os = "android")]
++        if should_bypass() {
++            return unsafe { base_alloc().alloc_zeroed(layout) };
++        }
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = true;
++        }
++
+         let ret = unsafe { base_alloc().alloc_zeroed(layout) };
+         if !ret.is_null() {
+             let size = unsafe { base_alloc_size(ret, layout) };
+             add(size);
+         }
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = false;
++        }
++
+         ret
+     }
+ 
+     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
++
++        #[cfg(target_os = "android")]
++        if should_bypass() {
++            return unsafe { base_alloc().realloc(ptr, layout, new_size) };
++        }
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = true;
++        }
++
+         let old_size = unsafe { base_alloc_size(ptr, layout) };
+         let ret = unsafe { base_alloc().realloc(ptr, layout, new_size) };
+         if !ret.is_null() {
+@@ -175,6 +266,12 @@ unsafe impl GlobalAlloc for TurboMalloc {
+             let new_size = unsafe { base_alloc_size(ret, new_layout) };
+             update(old_size, new_size);
+         }
++
++        #[cfg(target_os = "android")]
++        unsafe {
++            IN_ALLOCATOR = false;
++        }
++
+         ret
+     }
+ }
+
+From 60444515d126580f826bfe0df7e5c281740e7b21 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 10:26:24 +0000
+Subject: [PATCH 02/19] fix(ci): switch to github cache provider for fork
+ compatibility
+
+---
+ .github/workflows/build_and_deploy.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 848156b7fcfd3c..ae316072b2fedf 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -378,7 +378,7 @@ jobs:
+         uses: ijjk/rust-cache@turbo-cache-v1.0.9
+         with:
+           save-if: 'true'
+-          cache-provider: 'turbo'
++          cache-provider: 'github'
+           shared-key: build-${{ matrix.settings.target }}-${{ hashFiles('.cargo/config.toml') }}
+ 
+       - name: Clear native build
+
+From 50d4afecfaaf000ec3ca3053f484d2ed0de2089c Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 10:31:21 +0000
+Subject: [PATCH 03/19] fix(ci): remove cache step to bypass TURBO_TOKEN
+ requirement
+
+---
+ .github/workflows/build_and_deploy.yml | 7 -------
+ crates/napi/src/lockfile.rs            | 4 ----
+ 2 files changed, 11 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index ae316072b2fedf..9c0801821e4b8d 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -374,13 +374,6 @@ jobs:
+         run: ${{ matrix.settings.setup }}
+         if: ${{ matrix.settings.setup }}
+ 
+-      - name: Cache on ${{ github.ref_name }}
+-        uses: ijjk/rust-cache@turbo-cache-v1.0.9
+-        with:
+-          save-if: 'true'
+-          cache-provider: 'github'
+-          shared-key: build-${{ matrix.settings.target }}-${{ hashFiles('.cargo/config.toml') }}
+-
+       - name: Clear native build
+         run: rm -rf packages/next-swc/native
+ 
+diff --git a/crates/napi/src/lockfile.rs b/crates/napi/src/lockfile.rs
+index 0ce5affbaa6301..799fe26ebc226c 100644
+--- a/crates/napi/src/lockfile.rs
++++ b/crates/napi/src/lockfile.rs
+@@ -83,11 +83,9 @@ pub fn lockfile_try_acquire_sync(path: String) -> napi::Result<Option<External<J
+     #[cfg(target_os = "android")]
+     return {
+         let file = open_options.open(&path)?;
+-        println!("Trying to lock file at {:?}", path);
+ 
+         match file.try_lock_exclusive() {
+             Ok(_) => {
+-                println!("Lock succeeded!");
+                 Ok(Some(External::new(Mutex::new(ManuallyDrop::new(Some(
+                     LockfileInner {
+                         file,
+@@ -96,11 +94,9 @@ pub fn lockfile_try_acquire_sync(path: String) -> napi::Result<Option<External<J
+                 ))))))
+             }
+             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+-                println!("Lock would block, lock held elsewhere.");
+                 Ok(None)
+             }
+             Err(e) => {
+-                println!("Actual lock error: {:?}", e);
+                 Err(e.into())
+             }
+         }
+
+From 2e3940dcece89d5e9339f335b2bb7b9da6245257 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 11:22:13 +0000
+Subject: [PATCH 04/19] restore cache for PR
+
+---
+ .github/workflows/build_and_deploy.yml | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 9c0801821e4b8d..848156b7fcfd3c 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -374,6 +374,13 @@ jobs:
+         run: ${{ matrix.settings.setup }}
+         if: ${{ matrix.settings.setup }}
+ 
++      - name: Cache on ${{ github.ref_name }}
++        uses: ijjk/rust-cache@turbo-cache-v1.0.9
++        with:
++          save-if: 'true'
++          cache-provider: 'turbo'
++          shared-key: build-${{ matrix.settings.target }}-${{ hashFiles('.cargo/config.toml') }}
++
+       - name: Clear native build
+         run: rm -rf packages/next-swc/native
+ 
+
+From 7cc64dda2c97ddf8ad0b3bf522bb3a40e963f0c2 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 12:29:58 +0000
+Subject: [PATCH 05/19] temp: disable cache for personal artifact build
+
+---
+ .github/workflows/build_and_deploy.yml | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 848156b7fcfd3c..070cf64d511c3c 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -374,12 +374,12 @@ jobs:
+         run: ${{ matrix.settings.setup }}
+         if: ${{ matrix.settings.setup }}
+ 
+-      - name: Cache on ${{ github.ref_name }}
+-        uses: ijjk/rust-cache@turbo-cache-v1.0.9
+-        with:
+-          save-if: 'true'
+-          cache-provider: 'turbo'
+-          shared-key: build-${{ matrix.settings.target }}-${{ hashFiles('.cargo/config.toml') }}
++      # - name: Cache on ${{ github.ref_name }}
++      #   uses: ijjk/rust-cache@turbo-cache-v1.0.9
++      #   with:
++      #     save-if: 'true'
++      #     cache-provider: 'turbo'
++      #     shared-key: build-${{ matrix.settings.target }}-${{ hashFiles('.cargo/config.toml') }}
+ 
+       - name: Clear native build
+         run: rm -rf packages/next-swc/native
+
+From ac5db847c4489fde9a398f8e7acd8c8c49a63e29 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 12:59:47 +0000
+Subject: [PATCH 06/19] feat: auto-publish binary to releases
+
+---
+ .github/workflows/build_and_deploy.yml | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 070cf64d511c3c..eb4608b1466076 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -1,5 +1,7 @@
+ # Update all mentions of this name in vercel-packages when changing.
+ name: build-and-deploy
++permissions:
++  contents: write
+ 
+ on:
+   push:
+@@ -463,6 +465,18 @@ jobs:
+           name: turbo-run-summary-${{ matrix.settings.target }}
+           path: .turbo/runs
+ 
++      - name: Publish to GitHub Releases
++        uses: softprops/action-gh-release@v1
++        if: matrix.settings.target == 'aarch64-linux-android'
++        with:
++          tag_name: android-beta
++          name: "Next.js Android ARM64 (Unofficial)"
++          body: "Latest automated build from the personal-build branch."
++          draft: false
++          prerelease: true
++          files: packages/next-swc/native/next-swc.android-arm64.node
++          token: ${{ secrets.GITHUB_TOKEN }}
++
+   build-wasm:
+     if: ${{ needs.deploy-target.outputs.value != 'skipped' }}
+     needs:
+
+From eeb018a4fc9978a909f2cb3af6fc252631b1c457 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 13:26:56 +0000
+Subject: [PATCH 07/19] feat: auto-publish binary to releases with version
+
+---
+ .github/workflows/build_and_deploy.yml | 25 +++++++++++++++++++++----
+ 1 file changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index eb4608b1466076..8ded810fe14774 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -465,16 +465,33 @@ jobs:
+           name: turbo-run-summary-${{ matrix.settings.target }}
+           path: .turbo/runs
+ 
++      - name: Get Next.js Version
++        if: matrix.settings.target == 'aarch64-linux-android'
++        id: get_version
++        run: |
++          # Read version from package.json using Node
++          VERSION=$(node -p "require('./packages/next/package.json').version")
++          echo "NEXT_VERSION=$VERSION" >> $GITHUB_ENV
++          echo "Detected Next.js version: $VERSION"
++
++      - name: Zip binary
++        if: matrix.settings.target == 'aarch64-linux-android'
++        run: |
++          zip -j next-swc-binaries-aarch64-linux-android.zip packages/next-swc/native/next-swc.android-arm64.node
++
+       - name: Publish to GitHub Releases
+         uses: softprops/action-gh-release@v1
+         if: matrix.settings.target == 'aarch64-linux-android'
+         with:
+-          tag_name: android-beta
+-          name: "Next.js Android ARM64 (Unofficial)"
+-          body: "Latest automated build from the personal-build branch."
++          tag_name: v${{ env.NEXT_VERSION }}-android
++          name: "Next.js v${{ env.NEXT_VERSION }} (Android ARM64)"
++          body: |
++            Unofficial Android ARM64 build for Next.js v${{ env.NEXT_VERSION }}.
++            Built from personal-build branch.
++            GitHub Action Run: ${{ github.run_number }}
+           draft: false
+           prerelease: true
+-          files: packages/next-swc/native/next-swc.android-arm64.node
++          files: next-swc-binaries-aarch64-linux-android.zip
+           token: ${{ secrets.GITHUB_TOKEN }}
+ 
+   build-wasm:
+
+From d9e7b6ab5976573279ef0a65ee8ccb025b24c516 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Sun, 4 Jan 2026 13:57:46 +0000
+Subject: [PATCH 08/19] feat: auto-publish binary to releases with correct
+ version name if found
+
+---
+ .github/workflows/build_and_deploy.yml | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 8ded810fe14774..12715ce4c17aa3 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -465,14 +465,20 @@ jobs:
+           name: turbo-run-summary-${{ matrix.settings.target }}
+           path: .turbo/runs
+ 
+-      - name: Get Next.js Version
++      - name: Get Target Version
+         if: matrix.settings.target == 'aarch64-linux-android'
+         id: get_version
+         run: |
+-          # Read version from package.json using Node
+-          VERSION=$(node -p "require('./packages/next/package.json').version")
++          # Find the line with your Android dependency and extract just the version number
++          VERSION=$(grep '@next/swc-android-arm64' packages/next/package.json | head -n 1 | sed -E 's/.*: "(.*)".*/\1/')
++          
++          # Fallback: If it fails to find it (for safety), use "custom"
++          if [ -z "$VERSION" ]; then
++            VERSION="custom-build"
++          fi
++          
+           echo "NEXT_VERSION=$VERSION" >> $GITHUB_ENV
+-          echo "Detected Next.js version: $VERSION"
++          echo "Detected Target Version: $VERSION"
+ 
+       - name: Zip binary
+         if: matrix.settings.target == 'aarch64-linux-android'
+
+From 8ccd7f851a480b82c54c665f97684ef8211ae049 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 5 Jan 2026 10:26:01 +0530
+Subject: [PATCH 09/19] Remove '@next/swc-android-arm64' dependency
+
+Removed '@next/swc-android-arm64' from optionalDependencies.
+---
+ packages/next/package.json | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/packages/next/package.json b/packages/next/package.json
+index bbee60b3e40671..9e5c865c53a50b 100644
+--- a/packages/next/package.json
++++ b/packages/next/package.json
+@@ -127,8 +127,7 @@
+     }
+   },
+   "optionalDependencies": {
+-    "sharp": "^0.34.4",
+-    "@next/swc-android-arm64": "16.1.1-canary.11"
++    "sharp": "^0.34.4"
+   },
+   "devDependencies": {
+     "@babel/code-frame": "7.26.2",
+
+From 02cf3a055158a7f588ed9e8cc7113b4902cf4936 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 5 Jan 2026 10:44:49 +0530
+Subject: [PATCH 10/19] Update version extraction method for Android build
+
+---
+ .github/workflows/build_and_deploy.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 12715ce4c17aa3..189abe0220526d 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -470,7 +470,7 @@ jobs:
+         id: get_version
+         run: |
+           # Find the line with your Android dependency and extract just the version number
+-          VERSION=$(grep '@next/swc-android-arm64' packages/next/package.json | head -n 1 | sed -E 's/.*: "(.*)".*/\1/')
++          VERSION=$(jq -r '.version' packages/next/package.json)
+           
+           # Fallback: If it fails to find it (for safety), use "custom"
+           if [ -z "$VERSION" ]; then
+
+From 84c76519927e902e87c888dc3d003584d38b61a5 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 5 Jan 2026 12:06:57 +0530
+Subject: [PATCH 11/19] Capture version for aarch64-linux-android target
+
+Add step to capture version from package.json for aarch64-linux-android target.
+---
+ .github/workflows/build_and_deploy.yml | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 189abe0220526d..c2fe9b8dd282f0 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -344,6 +344,16 @@ jobs:
+           # this fails, but fetch with enough depth that we're likely to find a recent tag.
+           fetch-depth: 100
+ 
++      - name: Capture Real Version
++        if: matrix.settings.target == 'aarch64-linux-android'
++        run: |
++          # Extract version from packages/next-swc/package.json
++          VERSION=$(jq -r '.version' packages/next/package.json)
++          echo "Captured Version: $VERSION"
++          
++          # Save it to the Global Environment for later steps to use
++          echo "NEXT_VERSION=$VERSION" >> $GITHUB_ENV
++
+       - name: Setup node
+         uses: actions/setup-node@v4
+         if: ${{ !matrix.settings.docker }}
+
+From a167e2d40ae728c2984205a8481affe4a93f6c64 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 5 Jan 2026 12:12:47 +0530
+Subject: [PATCH 12/19] Update build_and_deploy.yml
+
+---
+ .github/workflows/build_and_deploy.yml | 24 ++++++++++++------------
+ 1 file changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index c2fe9b8dd282f0..63a5b67459b689 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -475,20 +475,20 @@ jobs:
+           name: turbo-run-summary-${{ matrix.settings.target }}
+           path: .turbo/runs
+ 
+-      - name: Get Target Version
+-        if: matrix.settings.target == 'aarch64-linux-android'
+-        id: get_version
+-        run: |
+-          # Find the line with your Android dependency and extract just the version number
+-          VERSION=$(jq -r '.version' packages/next/package.json)
++      # - name: Get Target Version
++      #   if: matrix.settings.target == 'aarch64-linux-android'
++      #   id: get_version
++      #   run: |
++      #     # Find the line with your Android dependency and extract just the version number
++      #     VERSION=$(jq -r '.version' packages/next/package.json)
+           
+-          # Fallback: If it fails to find it (for safety), use "custom"
+-          if [ -z "$VERSION" ]; then
+-            VERSION="custom-build"
+-          fi
++      #     # Fallback: If it fails to find it (for safety), use "custom"
++      #     if [ -z "$VERSION" ]; then
++      #       VERSION="custom-build"
++      #     fi
+           
+-          echo "NEXT_VERSION=$VERSION" >> $GITHUB_ENV
+-          echo "Detected Target Version: $VERSION"
++      #     echo "NEXT_VERSION=$VERSION" >> $GITHUB_ENV
++      #     echo "Detected Target Version: $VERSION"
+ 
+       - name: Zip binary
+         if: matrix.settings.target == 'aarch64-linux-android'
+
+From 349867fa9c21b45f449cfedbc113d80a081314e3 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Wed, 14 Jan 2026 17:30:56 +0530
+Subject: [PATCH 13/19] Update client.rs
+
+FIX: Added 'target_os = "android"' to this check so Android initializes 'ring' crypto too.
+---
+ turbopack/crates/turbo-tasks-fetch/src/client.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/turbopack/crates/turbo-tasks-fetch/src/client.rs b/turbopack/crates/turbo-tasks-fetch/src/client.rs
+index e77d722cec7079..ede7c4a11d2f58 100644
+--- a/turbopack/crates/turbo-tasks-fetch/src/client.rs
++++ b/turbopack/crates/turbo-tasks-fetch/src/client.rs
+@@ -47,7 +47,7 @@ impl FetchClientConfig {
+     fn try_build_uncached_reqwest_client(&self) -> reqwest::Result<reqwest::Client> {
+         #[allow(unused_mut)]
+         let mut builder = reqwest::Client::builder();
+-        #[cfg(any(target_os = "linux", all(windows, not(target_arch = "aarch64"))))]
++        #[cfg(any(target_os = "linux", target_os = "android", all(windows, not(target_arch = "aarch64"))))]
+         {
+             use std::sync::Once;
+             static ONCE: Once = Once::new();
+
+From 1d9b18979c09c263b33f4ec19703e5545c7eaad6 Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Wed, 14 Jan 2026 18:00:00 +0530
+Subject: [PATCH 14/19] fix(turbopack): enable reqwest/rustls for android
+ target
+
+The recent update to turbo-tasks-fetch removed implicit support for Android. This adds target_os = 'android' to Cargo.toml and initializes the ring provider in client.rs to fix aarch64-linux-android builds.
+---
+ turbopack/crates/turbo-tasks-fetch/Cargo.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/turbopack/crates/turbo-tasks-fetch/Cargo.toml b/turbopack/crates/turbo-tasks-fetch/Cargo.toml
+index 3184cb72b6ae7c..44ff7c3a2ec0d6 100644
+--- a/turbopack/crates/turbo-tasks-fetch/Cargo.toml
++++ b/turbopack/crates/turbo-tasks-fetch/Cargo.toml
+@@ -42,7 +42,7 @@ reqwest = { workspace = true, features = ["rustls"] }
+ # - Windows: aws-lc-sys requires NASM and CMake which we don't have installed in
+ #   CI, and would complicate the development environment setup. We could
+ #   possibly switch to always using `native-tls` on Windows in the future.
+-[target.'cfg(any(target_os = "linux", all(windows, not(target_arch = "aarch64"))))'.dependencies]
++[target.'cfg(any(target_os = "linux", target_os = "android", all(windows, not(target_arch = "aarch64"))))'.dependencies]
+ reqwest = { workspace = true, features = ["rustls-no-provider"] }
+ rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+ 
+
+From 59c8c1ef7eaed1168877fbc53d437b947b9bf06a Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Fri, 23 Jan 2026 11:54:43 +0530
+Subject: [PATCH 15/19] Update client.rs to work on android
+
+Universal Compatibility:
+Termux Users: It detects /data/data/com.termux/..., enters Branch A, and uses use_preconfigured_tls. This strictly bypasses the Android system calls, fixing the crash you experienced.
+Corporate Users (Termux): It detects the environment variable inside Branch A and merges it with the Termux certs.
+Real Android Apps: It detects the missing Termux file, skips Branch A, and enters Branch B (if an env var exists) or Branch C (default). This uses add_root_certificate, which safely adds to the Android System Keychain instead of replacing it.
+No Extra Dependencies:
+It uses your custom simple_base64_decode helper (guarded by #[cfg(target_os = "android")] so it doesn't break Linux/Windows builds).
+It avoids adding base64 or pem crates to Cargo.toml.
+Debuggability:
+You kept the eprintln! inside the error handler (guarded for Android). If something goes wrong in the future, you will see the exact TLS error immediately.
+---
+ .../crates/turbo-tasks-fetch/src/client.rs    | 118 ++++++++++++++++++
+ 1 file changed, 118 insertions(+)
+
+diff --git a/turbopack/crates/turbo-tasks-fetch/src/client.rs b/turbopack/crates/turbo-tasks-fetch/src/client.rs
+index 27011018e4fdee..7063c9e9172441 100644
+--- a/turbopack/crates/turbo-tasks-fetch/src/client.rs
++++ b/turbopack/crates/turbo-tasks-fetch/src/client.rs
+@@ -74,6 +74,84 @@ impl FetchClientConfig {
+                 },
+             ))
+         }
++        #[cfg(target_os = "android")]
++        {
++            let termux_path = std::path::Path::new("/data/data/com.termux/files/usr/etc/tls/cert.pem");
++            let env_var = std::env::var("TURBO_SSL_CERT_FILE");
++
++            // --- BRANCH A: TERMUX MODE (Fix the Crash) ---
++            if termux_path.exists() {
++                println!("[Turbopack] Termux environment detected.");
++                
++                let mut root_store = rustls::RootCertStore::empty();
++                let mut paths_to_load = vec![termux_path.to_path_buf()];
++
++                // If user also provided a custom cert, add it to our manual list
++                if let Ok(p) = env_var {
++                    paths_to_load.push(std::path::PathBuf::from(p));
++                }
++
++                for cert_path in paths_to_load {
++                    if let Ok(pem_bytes) = std::fs::read(&cert_path) {
++                        let content = String::from_utf8_lossy(&pem_bytes);
++                        // ... (Reuse the parsing logic from before) ...
++                        let header = "-----BEGIN CERTIFICATE-----";
++                        let footer = "-----END CERTIFICATE-----";
++                        let mut current_idx = 0;
++                        while let Some(start_offset) = content[current_idx..].find(header) {
++                            let start = current_idx + start_offset + header.len();
++                            if let Some(end_offset) = content[start..].find(footer) {
++                                let end = start + end_offset;
++                                let base64_str = content[start..end].lines().map(|l| l.trim()).collect::<String>();
++                                if let Ok(der_bytes) = simple_base64_decode(&base64_str) {
++                                    let cert = rustls::pki_types::CertificateDer::from(der_bytes);
++                                    let _ = root_store.add(cert);
++                                }
++                                current_idx = end + footer.len();
++                            } else { break; }
++                        }
++                    }
++                }
++                
++                // REPLACEMENT: We bypass the system entirely because the system crashes in Termux.
++                let tls_config = rustls::ClientConfig::builder()
++                    .with_root_certificates(root_store)
++                    .with_no_client_auth();
++                builder = builder.use_preconfigured_tls(tls_config);
++            }
++            // --- BRANCH B: REAL APP MODE (Add, don't Replace) ---
++            else if let Ok(p) = env_var {
++                // We are NOT in Termux, but we have a custom cert.
++                // We want to KEEP the Android System certs and ADD this one.
++                println!("[Turbopack] Custom cert env var detected (Android App mode).");
++                
++                if let Ok(pem_bytes) = std::fs::read(&p) {
++                    let content = String::from_utf8_lossy(&pem_bytes);
++                    // ... (Reuse the same parsing logic) ...
++                    let header = "-----BEGIN CERTIFICATE-----";
++                    let footer = "-----END CERTIFICATE-----";
++                    let mut current_idx = 0;
++                    while let Some(start_offset) = content[current_idx..].find(header) {
++                        let start = current_idx + start_offset + header.len();
++                        if let Some(end_offset) = content[start..].find(footer) {
++                            let end = start + end_offset;
++                            let base64_str = content[start..end].lines().map(|l| l.trim()).collect::<String>();
++                            
++                            if let Ok(der_bytes) = simple_base64_decode(&base64_str) {
++                                // ADDITION: We use reqwest's API to add to the existing system list.
++                                if let Ok(cert) = reqwest::Certificate::from_der(&der_bytes) {
++                                    builder = builder.add_root_certificate(cert);
++                                }
++                            }
++                            current_idx = end + footer.len();
++                        } else { break; }
++                    }
++                }
++            }
++            // --- BRANCH C: STANDARD MODE ---
++            // No Termux, No Env Var. Do nothing. 
++            // reqwest will automatically use Android System Certs via JNI.
++        }
+         builder.build()
+     }
+ }
+@@ -120,6 +198,19 @@ impl FetchClientConfig {
+         match response_result {
+             Ok(resp) => Ok(Vc::cell(Ok(resp.resolved_cell()))),
+             Err(err) => {
++
++                #[cfg(target_os = "android")]
++                {
++                    // --- DEBUGGING START ---
++                    eprintln!("\n[Turbopack] NETWORK ERROR DEBUG:");
++                    eprintln!("URL: {}", url_ref);
++                    eprintln!("Error: {:?}", err); // Prints the high level error
++                    if let Some(source) = std::error::Error::source(&err) {
++                        eprintln!("Caused by: {:?}", source); // Prints the deep TLS error
++                    }
++                    // --- DEBUGGING END ---
++                }
++                
+                 // the client failed to construct or the HTTP request failed
+                 mark_session_dependent();
+                 Ok(Vc::cell(Err(
+@@ -130,6 +221,33 @@ impl FetchClientConfig {
+     }
+ }
+ 
++
++#[cfg(target_os = "android")]
++fn simple_base64_decode(input: &str) -> Result<Vec<u8>, ()> {
++    let mut buffer = Vec::new();
++    let mut bits: u32 = 0;
++    let mut bit_count = 0;
++    for byte in input.bytes() {
++        let val = match byte {
++            b'A'..=b'Z' => byte - b'A',
++            b'a'..=b'z' => byte - b'a' + 26,
++            b'0'..=b'9' => byte - b'0' + 52,
++            b'+' => 62,
++            b'/' => 63,
++            b'=' => continue,
++            _ => continue,
++        };
++        bits = (bits << 6) | (val as u32);
++        bit_count += 6;
++        if bit_count >= 8 {
++            bit_count -= 8;
++            buffer.push((bits >> bit_count) as u8);
++            bits &= (1 << bit_count) - 1;
++        }
++    }
++    Ok(buffer)
++}
++
+ #[doc(hidden)]
+ pub fn __test_only_reqwest_client_cache_clear() {
+     CLIENT_CACHE.clear()
+
+From 32a1424ccebc2aec61a928b38c6b561849ab5add Mon Sep 17 00:00:00 2001
+From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 26 Jan 2026 18:15:40 +0530
+Subject: [PATCH 16/19] commented out debug messages.
+
+---
+ .../crates/turbo-tasks-fetch/src/client.rs    | 22 +++++++++----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/turbopack/crates/turbo-tasks-fetch/src/client.rs b/turbopack/crates/turbo-tasks-fetch/src/client.rs
+index 7063c9e9172441..3b81eb5f8ee4da 100644
+--- a/turbopack/crates/turbo-tasks-fetch/src/client.rs
++++ b/turbopack/crates/turbo-tasks-fetch/src/client.rs
+@@ -81,7 +81,7 @@ impl FetchClientConfig {
+ 
+             // --- BRANCH A: TERMUX MODE (Fix the Crash) ---
+             if termux_path.exists() {
+-                println!("[Turbopack] Termux environment detected.");
++                //println!("[Turbopack] Termux environment detected.");
+                 
+                 let mut root_store = rustls::RootCertStore::empty();
+                 let mut paths_to_load = vec![termux_path.to_path_buf()];
+@@ -123,7 +123,7 @@ impl FetchClientConfig {
+             else if let Ok(p) = env_var {
+                 // We are NOT in Termux, but we have a custom cert.
+                 // We want to KEEP the Android System certs and ADD this one.
+-                println!("[Turbopack] Custom cert env var detected (Android App mode).");
++                //println!("[Turbopack] Custom cert env var detected (Android App mode).");
+                 
+                 if let Ok(pem_bytes) = std::fs::read(&p) {
+                     let content = String::from_utf8_lossy(&pem_bytes);
+@@ -199,17 +199,17 @@ impl FetchClientConfig {
+             Ok(resp) => Ok(Vc::cell(Ok(resp.resolved_cell()))),
+             Err(err) => {
+ 
+-                #[cfg(target_os = "android")]
+-                {
++                //#[cfg(target_os = "android")]
++                //{
+                     // --- DEBUGGING START ---
+-                    eprintln!("\n[Turbopack] NETWORK ERROR DEBUG:");
+-                    eprintln!("URL: {}", url_ref);
+-                    eprintln!("Error: {:?}", err); // Prints the high level error
+-                    if let Some(source) = std::error::Error::source(&err) {
+-                        eprintln!("Caused by: {:?}", source); // Prints the deep TLS error
+-                    }
++                    //eprintln!("\n[Turbopack] NETWORK ERROR DEBUG:");
++                    //eprintln!("URL: {}", url_ref);
++                    //eprintln!("Error: {:?}", err); // Prints the high level error
++                    //if let Some(source) = std::error::Error::source(&err) {
++                    //    eprintln!("Caused by: {:?}", source); // Prints the deep TLS error
++                    //}
+                     // --- DEBUGGING END ---
+-                }
++                //}
+                 
+                 // the client failed to construct or the HTTP request failed
+                 mark_session_dependent();
+
+From d0006d5f69a0e34c143df7de7ebb6319cf142438 Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 2 Feb 2026 04:39:15 +0000
+Subject: [PATCH 17/19] fixed build erros
+
+---
+ crates/next-napi-bindings/src/lockfile.rs | 20 +++++++++++++++-----
+ 1 file changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/crates/next-napi-bindings/src/lockfile.rs b/crates/next-napi-bindings/src/lockfile.rs
+index e2896789496a7b..2ea9913d0ee200 100644
+--- a/crates/next-napi-bindings/src/lockfile.rs
++++ b/crates/next-napi-bindings/src/lockfile.rs
+@@ -9,10 +9,6 @@ use anyhow::Context;
+ use napi::bindgen_prelude::External;
+ use napi_derive::napi;
+ 
+-#[cfg(target_os = "android")]
+-use fs2::FileExt;
+-
+-
+ /// A wrapper around [`File`] that is passed to JS, and is set to `None` when [`lockfile_unlock`] is
+ /// called.
+ ///
+@@ -109,10 +105,24 @@ pub fn lockfile_try_acquire_sync(
+ 
+     #[cfg(target_os = "android")]
+     return {
++        use std::io::{Seek, SeekFrom};
++        use fs2::FileExt;
++
++        let mut open_options = OpenOptions::new();
++        open_options.write(true).create(true).read(true);
++
+         let file = open_options.open(&path)?;
+ 
+         match file.try_lock_exclusive() {
+             Ok(_) => {
++                file.set_len(0)?;
++                (&file).seek(SeekFrom::Start(0))?;
++                
++                if let Some(ref data) = content {
++                    (&file).write_all(data.as_bytes())?;
++                    (&file).flush()?;
++                }
++
+                 Ok(Some(External::new(Mutex::new(ManuallyDrop::new(Some(
+                     LockfileInner {
+                         file,
+@@ -120,7 +130,7 @@ pub fn lockfile_try_acquire_sync(
+                     },
+                 ))))))
+             }
+-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
++            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                 Ok(None)
+             }
+             Err(e) => {
+
+From ad69403e35eeaa6b0302ee6df6f13032f60b401a Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 2 Feb 2026 17:22:46 +0530
+Subject: [PATCH 18/19] isolating android specific dependencies from common
+ dependencies.
+
+---
+ crates/next-napi-bindings/Cargo.toml | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/crates/next-napi-bindings/Cargo.toml b/crates/next-napi-bindings/Cargo.toml
+index a2b90a00ec9335..682d3fe251e021 100644
+--- a/crates/next-napi-bindings/Cargo.toml
++++ b/crates/next-napi-bindings/Cargo.toml
+@@ -55,8 +55,6 @@ ignored = [
+ ]
+ 
+ [dependencies]
+-[target.'cfg(target_os = "android")'.dependencies]
+-fs2 = "0.4"
+ anyhow = { workspace = true }
+ bincode = { workspace = true }
+ console-subscriber = { workspace = true, optional = true }
+@@ -102,6 +100,9 @@ swc_core = { workspace = true, features = [
+     "ecma_visit",
+ ] }
+ 
++[target.'cfg(target_os = "android")'.dependencies]
++fs2 = "0.4"
++
+ # Dependencies for the native, non-wasm32 build.
+ [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ lightningcss-napi = { workspace = true }
+
+From 771b2ccb9b53a5885efa04994de5793865a04bd3 Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 2 Feb 2026 17:33:34 +0530
+Subject: [PATCH 19/19] Update counter.rs
+
+CounterGuard::drop on Android doesn't call unload(), causing permanent over-counting of memory in the global ALLOCATED counter when threads exit so  we ensure that exactly when the thread is about to die (and the CounterGuard is dropped), it first "unloads" its memory credits back to the global counter, preventing the memory leak we discussed.
+---
+ turbopack/crates/turbo-tasks-malloc/src/counter.rs | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/turbopack/crates/turbo-tasks-malloc/src/counter.rs b/turbopack/crates/turbo-tasks-malloc/src/counter.rs
+index 7f31b318313c4d..061426541bd4f2 100644
+--- a/turbopack/crates/turbo-tasks-malloc/src/counter.rs
++++ b/turbopack/crates/turbo-tasks-malloc/src/counter.rs
+@@ -137,6 +137,7 @@ struct CounterGuard(ThreadLocalCounter);
+ #[cfg(target_os = "android")]
+ impl Drop for CounterGuard {
+     fn drop(&mut self) {
++        self.0.unload();
+         unsafe {
+             *IS_THREAD_EXITING_FLAG.get() = true;
+         }
