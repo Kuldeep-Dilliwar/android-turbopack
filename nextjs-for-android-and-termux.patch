@@ -1,7 +1,7 @@
 From 8e2a732275fd1fcda6b89fb1becf529d1b328c88 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 10:10:50 +0000
-Subject: [PATCH 01/19] android build
+Subject: [PATCH 01/23] android build
 
 ---
  .github/workflows/build_and_deploy.yml        | 27 ++++++
@@ -491,7 +491,7 @@ index 4c13caec0aa6a7..b3473454e87da2 100644
 From 60444515d126580f826bfe0df7e5c281740e7b21 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 10:26:24 +0000
-Subject: [PATCH 02/19] fix(ci): switch to github cache provider for fork
+Subject: [PATCH 02/23] fix(ci): switch to github cache provider for fork
  compatibility
 
 ---
@@ -515,7 +515,7 @@ index 848156b7fcfd3c..ae316072b2fedf 100644
 From 50d4afecfaaf000ec3ca3053f484d2ed0de2089c Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 10:31:21 +0000
-Subject: [PATCH 03/19] fix(ci): remove cache step to bypass TURBO_TOKEN
+Subject: [PATCH 03/23] fix(ci): remove cache step to bypass TURBO_TOKEN
  requirement
 
 ---
@@ -573,7 +573,7 @@ index 0ce5affbaa6301..799fe26ebc226c 100644
 From 2e3940dcece89d5e9339f335b2bb7b9da6245257 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 11:22:13 +0000
-Subject: [PATCH 04/19] restore cache for PR
+Subject: [PATCH 04/23] restore cache for PR
 
 ---
  .github/workflows/build_and_deploy.yml | 7 +++++++
@@ -601,7 +601,7 @@ index 9c0801821e4b8d..848156b7fcfd3c 100644
 From 7cc64dda2c97ddf8ad0b3bf522bb3a40e963f0c2 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 12:29:58 +0000
-Subject: [PATCH 05/19] temp: disable cache for personal artifact build
+Subject: [PATCH 05/23] temp: disable cache for personal artifact build
 
 ---
  .github/workflows/build_and_deploy.yml | 12 ++++++------
@@ -634,7 +634,7 @@ index 848156b7fcfd3c..070cf64d511c3c 100644
 From ac5db847c4489fde9a398f8e7acd8c8c49a63e29 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 12:59:47 +0000
-Subject: [PATCH 06/19] feat: auto-publish binary to releases
+Subject: [PATCH 06/23] feat: auto-publish binary to releases
 
 ---
  .github/workflows/build_and_deploy.yml | 14 ++++++++++++++
@@ -675,7 +675,7 @@ index 070cf64d511c3c..eb4608b1466076 100644
 From eeb018a4fc9978a909f2cb3af6fc252631b1c457 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 13:26:56 +0000
-Subject: [PATCH 07/19] feat: auto-publish binary to releases with version
+Subject: [PATCH 07/23] feat: auto-publish binary to releases with version
 
 ---
  .github/workflows/build_and_deploy.yml | 25 +++++++++++++++++++++----
@@ -727,7 +727,7 @@ index eb4608b1466076..8ded810fe14774 100644
 From d9e7b6ab5976573279ef0a65ee8ccb025b24c516 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Sun, 4 Jan 2026 13:57:46 +0000
-Subject: [PATCH 08/19] feat: auto-publish binary to releases with correct
+Subject: [PATCH 08/23] feat: auto-publish binary to releases with correct
  version name if found
 
 ---
@@ -767,7 +767,7 @@ index 8ded810fe14774..12715ce4c17aa3 100644
 From 8ccd7f851a480b82c54c665f97684ef8211ae049 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 5 Jan 2026 10:26:01 +0530
-Subject: [PATCH 09/19] Remove '@next/swc-android-arm64' dependency
+Subject: [PATCH 09/23] Remove '@next/swc-android-arm64' dependency
 
 Removed '@next/swc-android-arm64' from optionalDependencies.
 ---
@@ -792,7 +792,7 @@ index bbee60b3e40671..9e5c865c53a50b 100644
 From 02cf3a055158a7f588ed9e8cc7113b4902cf4936 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 5 Jan 2026 10:44:49 +0530
-Subject: [PATCH 10/19] Update version extraction method for Android build
+Subject: [PATCH 10/23] Update version extraction method for Android build
 
 ---
  .github/workflows/build_and_deploy.yml | 2 +-
@@ -815,7 +815,7 @@ index 12715ce4c17aa3..189abe0220526d 100644
 From 84c76519927e902e87c888dc3d003584d38b61a5 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 5 Jan 2026 12:06:57 +0530
-Subject: [PATCH 11/19] Capture version for aarch64-linux-android target
+Subject: [PATCH 11/23] Capture version for aarch64-linux-android target
 
 Add step to capture version from package.json for aarch64-linux-android target.
 ---
@@ -847,7 +847,7 @@ index 189abe0220526d..c2fe9b8dd282f0 100644
 From a167e2d40ae728c2984205a8481affe4a93f6c64 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 5 Jan 2026 12:12:47 +0530
-Subject: [PATCH 12/19] Update build_and_deploy.yml
+Subject: [PATCH 12/23] Update build_and_deploy.yml
 
 ---
  .github/workflows/build_and_deploy.yml | 24 ++++++++++++------------
@@ -894,7 +894,7 @@ index c2fe9b8dd282f0..63a5b67459b689 100644
 From 349867fa9c21b45f449cfedbc113d80a081314e3 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Wed, 14 Jan 2026 17:30:56 +0530
-Subject: [PATCH 13/19] Update client.rs
+Subject: [PATCH 13/23] Update client.rs
 
 FIX: Added 'target_os = "android"' to this check so Android initializes 'ring' crypto too.
 ---
@@ -918,7 +918,7 @@ index e77d722cec7079..ede7c4a11d2f58 100644
 From 1d9b18979c09c263b33f4ec19703e5545c7eaad6 Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Wed, 14 Jan 2026 18:00:00 +0530
-Subject: [PATCH 14/19] fix(turbopack): enable reqwest/rustls for android
+Subject: [PATCH 14/23] fix(turbopack): enable reqwest/rustls for android
  target
 
 The recent update to turbo-tasks-fetch removed implicit support for Android. This adds target_os = 'android' to Cargo.toml and initializes the ring provider in client.rs to fix aarch64-linux-android builds.
@@ -943,7 +943,7 @@ index 3184cb72b6ae7c..44ff7c3a2ec0d6 100644
 From 59c8c1ef7eaed1168877fbc53d437b947b9bf06a Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Fri, 23 Jan 2026 11:54:43 +0530
-Subject: [PATCH 15/19] Update client.rs to work on android
+Subject: [PATCH 15/23] Update client.rs to work on android
 
 Universal Compatibility:
 Termux Users: It detects /data/data/com.termux/..., enters Branch A, and uses use_preconfigured_tls. This strictly bypasses the Android system calls, fixing the crash you experienced.
@@ -1105,7 +1105,7 @@ index 27011018e4fdee..7063c9e9172441 100644
 From 32a1424ccebc2aec61a928b38c6b561849ab5add Mon Sep 17 00:00:00 2001
 From: Kuldeep-Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 26 Jan 2026 18:15:40 +0530
-Subject: [PATCH 16/19] commented out debug messages.
+Subject: [PATCH 16/23] commented out debug messages.
 
 ---
  .../crates/turbo-tasks-fetch/src/client.rs    | 22 +++++++++----------
@@ -1164,7 +1164,7 @@ index 7063c9e9172441..3b81eb5f8ee4da 100644
 From d0006d5f69a0e34c143df7de7ebb6319cf142438 Mon Sep 17 00:00:00 2001
 From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 2 Feb 2026 04:39:15 +0000
-Subject: [PATCH 17/19] fixed build erros
+Subject: [PATCH 17/23] fixed build erros
 
 ---
  crates/next-napi-bindings/src/lockfile.rs | 20 +++++++++++++++-----
@@ -1223,7 +1223,7 @@ index e2896789496a7b..2ea9913d0ee200 100644
 From ad69403e35eeaa6b0302ee6df6f13032f60b401a Mon Sep 17 00:00:00 2001
 From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 2 Feb 2026 17:22:46 +0530
-Subject: [PATCH 18/19] isolating android specific dependencies from common
+Subject: [PATCH 18/23] isolating android specific dependencies from common
  dependencies.
 
 ---
@@ -1257,7 +1257,7 @@ index a2b90a00ec9335..682d3fe251e021 100644
 From 771b2ccb9b53a5885efa04994de5793865a04bd3 Mon Sep 17 00:00:00 2001
 From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
 Date: Mon, 2 Feb 2026 17:33:34 +0530
-Subject: [PATCH 19/19] Update counter.rs
+Subject: [PATCH 19/23] Update counter.rs
 
 CounterGuard::drop on Android doesn't call unload(), causing permanent over-counting of memory in the global ALLOCATED counter when threads exit so  we ensure that exactly when the thread is about to die (and the CounterGuard is dropped), it first "unloads" its memory credits back to the global counter, preventing the memory leak we discussed.
 ---
@@ -1276,3 +1276,110 @@ index 7f31b318313c4d..061426541bd4f2 100644
          unsafe {
              *IS_THREAD_EXITING_FLAG.get() = true;
          }
+
+From 1177e458c13350831f71ac4c57580ccb44ed4c88 Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 30 Mar 2026 12:16:03 +0530
+Subject: [PATCH 20/23] Add support for aarch64-linux-android in deployment
+
+---
+ .github/workflows/build_and_deploy.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 22b4781a7654c4..14e0f1b9810831 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -151,7 +151,7 @@ jobs:
+           config: |
+             deployTarget: ${{ needs.deploy-target.outputs.value }}
+           input: |
+-            $if: "config.deployTarget != 'automated-preview' || (this.target == 'x86_64-unknown-linux-gnu')"
++            $if: "config.deployTarget != 'automated-preview' || (this.target == 'x86_64-unknown-linux-gnu') || (this.target == 'aarch64-linux-android')"
+             target:
+               $dynamic: "`${this.arch}-${this.vendor}-${this.sys}${this.abi ? '-' + this.abi : ''}`"
+             build_task: build-native-release
+
+From 2f70a49f073fa7f50ebb23847039de7890b6a500 Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 30 Mar 2026 12:22:22 +0530
+Subject: [PATCH 21/23] Disable caching step in build and deploy workflow
+
+Comment out caching step for Docker builds in workflow
+---
+ .github/workflows/build_and_deploy.yml | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index 14e0f1b9810831..ec0f90193b526d 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -264,13 +264,13 @@ jobs:
+         run: ${{ matrix.setup }}
+         if: ${{ matrix.setup }}
+ 
+-      - name: Cache on ${{ github.ref_name }}
+-        if: ${{ !matrix.docker }}
+-        uses: ijjk/rust-cache@turbo-cache-v1.0.9
+-        with:
+-          save-if: 'true'
+-          cache-provider: 'turbo'
+-          shared-key: build-${{ matrix.target }}-${{ hashFiles('.cargo/config.toml') }}
++      # - name: Cache on ${{ github.ref_name }}
++      #   if: ${{ !matrix.docker }}
++      #   uses: ijjk/rust-cache@turbo-cache-v1.0.9
++      #   with:
++      #     save-if: 'true'
++      #     cache-provider: 'turbo'
++      #     shared-key: build-${{ matrix.target }}-${{ hashFiles('.cargo/config.toml') }}
+ 
+       - name: Clear native build
+         run: rm -rf packages/next-swc/native
+
+From 52850d8bacb99c7963d98d09b37b9d614f7bd004 Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Mon, 30 Mar 2026 07:37:37 +0000
+Subject: [PATCH 22/23] trying to fix the android build
+
+---
+ .github/workflows/build_and_deploy.yml | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index ec0f90193b526d..e77a94eba520ff 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -327,7 +327,9 @@ jobs:
+           node -v
+           npm i -g "@napi-rs/cli@${NAPI_CLI_VERSION}"
+           pnpm dlx turbo@${TURBO_VERSION} run ${{ matrix.build_task }} ${TURBO_ARGS} -- --target ${{ matrix.target }}
+-          if [ "${{ matrix.os }}" != "windows" ]; then
++          if [ "${{ matrix.target }}" == "aarch64-linux-android" ]; then
++            $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip -x packages/next-swc/native/next-swc.*.node
++          elif [ "${{ matrix.os }}" != "windows" ]; then
+             strip -x packages/next-swc/native/next-swc.*.node
+           fi
+ 
+
+From 243e36151a10225e909a0333981cec132dc5de0e Mon Sep 17 00:00:00 2001
+From: Kuldeep Dilliwar <kuldeepdilliwar@gmail.com>
+Date: Tue, 14 Apr 2026 15:55:39 +0530
+Subject: [PATCH 23/23] Fix indentation for Setup toolchain step
+
+---
+ .github/workflows/build_and_deploy.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.github/workflows/build_and_deploy.yml b/.github/workflows/build_and_deploy.yml
+index ee0ff688d771f9..9a0c9a2cc8230d 100644
+--- a/.github/workflows/build_and_deploy.yml
++++ b/.github/workflows/build_and_deploy.yml
+@@ -262,7 +262,7 @@ jobs:
+       - name: normalize versions
+         run: node scripts/normalize-version-bump.js
+ 
+-- name: Setup toolchain
++      - name: Setup toolchain
+         run: ${{ matrix.setup }}
+         if: ${{ matrix.setup }}
+ 
